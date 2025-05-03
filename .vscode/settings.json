@@ -1,0 +1,7 @@
+{
+  "files.associations": {
+    "*.embeddedhtml": "html",
+    "initializer_list": "cpp",
+    "type_traits": "cpp"
+  }
+}
