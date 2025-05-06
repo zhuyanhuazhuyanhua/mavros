@@ -13,6 +13,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
+#include <ros/callback_queue.h>
 
 // === 全局变量 ===
 mavros_msgs::State current_state;
@@ -146,7 +147,7 @@ p_body_to_ENU(const std::vector<geometry_msgs::PoseStamped> &target_points,
     {
       // 修改为使用 -> 操作符
       target_enu = tf_buffer->transform(target_with_current_time, "enu",
-                                        ros::Duration(1.0));
+                                        ros::Duration(0.1));
       // 输出转换后的 ENU 坐标系参数
       ROS_INFO("Transformed target in ENU coordinates: x = %f, y = %f, z = %f",
                target_enu.pose.position.x, target_enu.pose.position.y,
@@ -172,6 +173,10 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "offboard_node");
   ros::NodeHandle nh;
 
+  // 创建异步回调队列
+  ros::CallbackQueue async_queue;
+  nh.setCallbackQueue(&async_queue);
+
   // 初始化 body_to_enu_transform
   initialize_body_to_enu_transform();
 
@@ -180,9 +185,16 @@ int main(int argc, char **argv)
   tf_listener = new tf2_ros::TransformListener(*tf_buffer);
   tf_broadcaster = new tf2_ros::TransformBroadcaster();
 
+  // 使用异步回调队列订阅话题
   ros::Subscriber state_sub = nh.subscribe("mavros/state", 10, state_cb);
-  ros::Subscriber odom_sub =
-      nh.subscribe("mavros/local_position/odom", 10, odom_cb);
+  ros::Subscriber odom_sub = nh.subscribe("mavros/local_position/odom", 10, odom_cb);
+
+  // 正确声明并初始化 async_spinner 线程，注意结尾添加分号
+  std::thread async_spinner([&async_queue]()
+                            {
+      while (ros::ok()) {
+          async_queue.callAvailable(ros::WallDuration(0.1));
+      } }); // 这里添加分号
 
   ros::Publisher local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>(
       "mavros/setpoint_position/local", 10);
@@ -389,10 +401,15 @@ int main(int argc, char **argv)
     rate.sleep();
   }
 
-  // 释放动态分配的内存
-  delete tf_broadcaster;
-  delete tf_listener;
-  delete tf_buffer;
+  // 等待异步线程退出
+  if (async_spinner.joinable())
+  {
+    async_spinner.join();
+  }
+
+  auto tf_buffer = std::make_unique<tf2_ros::Buffer>();
+  auto tf_listener = std::make_unique<tf2_ros::TransformListener>(*tf_buffer);
+  auto tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>();
 
   return 0;
 }
