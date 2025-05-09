@@ -64,6 +64,8 @@
     "xlocmes": "cpp",
     "xlocmon": "cpp",
     "xlocnum": "cpp",
-    "xloctime": "cpp"
+    "xloctime": "cpp",
+    "list": "cpp",
+    "xhash": "cpp"
   }
 }
